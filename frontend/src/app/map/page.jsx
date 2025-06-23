@@ -1,11 +1,15 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { MapContainer, TileLayer, Marker, Popup } from 'react-leaflet';
+import { MapContainer, TileLayer, Marker, Popup, Polyline } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import axios from 'axios';
 import axiosInstance from '../utils/axiosInstance';
+
+// OpenRouteService API configuration
+const ORS_API_KEY = process.env.NEXT_PUBLIC_ORS_API_KEY;
+const ORS_BASE_URL = 'https://api.openrouteservice.org/v2/directions/foot-walking';
 
 // Fix Leaflet's default marker path
 delete L.Icon.Default.prototype._getIconUrl;
@@ -33,19 +37,13 @@ const redIcon = new L.Icon({
 });
 
 // Restaurant Detail Modal Component
-const RestaurantModal = ({ restaurant, isOpen, onClose }) => {
+const RestaurantModal = ({ restaurant, isOpen, onClose, onShowPaths, loadingPath }) => {
   if (!isOpen || !restaurant) return null;
 
   const handleCallNow = () => {
     if (restaurant.phone) {
       window.location.href = `tel:${restaurant.phone}`;
     }
-  };
-
-  const handleShowPaths = () => {
-    // Placeholder for future functionality
-    console.log('Show paths functionality will be implemented later');
-    alert('Show paths functionality will be implemented later');
   };
 
   return (
@@ -137,10 +135,24 @@ const RestaurantModal = ({ restaurant, isOpen, onClose }) => {
               📞 Call Now
             </button>
             <button
-              onClick={handleShowPaths}
-              className="px-6 py-3 bg-red-600 hover:bg-red-700 text-white rounded-lg font-semibold flex items-center gap-2 transition-all hover:shadow-lg transform hover:scale-105"
+              onClick={() => onShowPaths(restaurant)}
+              disabled={loadingPath}
+              className={`px-6 py-3 rounded-lg font-semibold flex items-center gap-2 transition-all ${
+                loadingPath
+                  ? 'bg-gray-400 cursor-not-allowed text-white'
+                  : 'bg-red-600 hover:bg-red-700 text-white hover:shadow-lg transform hover:scale-105'
+              }`}
             >
-              🗺️ Show Paths
+              {loadingPath ? (
+                <>
+                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+                  Loading Path...
+                </>
+              ) : (
+                <>
+                  🗺️ Show Paths
+                </>
+              )}
             </button>
           </div>
         </div>
@@ -157,6 +169,9 @@ export default function MapPage() {
   const [selectedRestaurant, setSelectedRestaurant] = useState(null);
   const [showModal, setShowModal] = useState(false);
   const [hoveredRestaurant, setHoveredRestaurant] = useState(null);
+  const [routePath, setRoutePath] = useState(null);
+  const [routeInfo, setRouteInfo] = useState(null);
+  const [loadingPath, setLoadingPath] = useState(false);
 
   useEffect(() => {
     navigator.geolocation.getCurrentPosition(
@@ -197,6 +212,58 @@ export default function MapPage() {
     } finally {
       setLoading(false);
     }
+  };
+
+  const getRouteToRestaurant = async (restaurant) => {
+    if (!location || !restaurant.location) {
+      setError('Location data not available');
+      return;
+    }
+
+    setLoadingPath(true);
+    setError(null);
+
+    try {
+      const response = await axios.get(ORS_BASE_URL, {
+        params: {
+          api_key: ORS_API_KEY,
+          start: `${location[0]},${location[1]}`, // longitude,latitude
+          end: `${restaurant.location[0]},${restaurant.location[1]}` // longitude,latitude
+        }
+      });
+
+      if (response.data && response.data.features && response.data.features.length > 0) {
+        const route = response.data.features[0];
+        const coordinates = route.geometry.coordinates;
+        
+        // Convert coordinates from [lng, lat] to [lat, lng] for Leaflet
+        const pathCoordinates = coordinates.map(coord => [coord[1], coord[0]]);
+        
+        // Extract route information
+        const routeProperties = route.properties.segments[0];
+        
+        setRoutePath(pathCoordinates);
+        setRouteInfo({
+          distance: (routeProperties.distance / 1000).toFixed(2), // Convert to km
+          duration: Math.round(routeProperties.duration / 60), // Convert to minutes
+        });
+
+        // Close modal to show the route on map
+        setShowModal(false);
+      } else {
+        setError('No route found to this restaurant');
+      }
+    } catch (err) {
+      console.error('Error fetching route:', err);
+      setError('Failed to get route. Please try again.');
+    } finally {
+      setLoadingPath(false);
+    }
+  };
+
+  const clearRoute = () => {
+    setRoutePath(null);
+    setRouteInfo(null);
   };
 
   const handleRestaurantClick = (restaurant) => {
@@ -242,6 +309,16 @@ export default function MapPage() {
             </div>
           </Popup>
         </Marker>
+
+        {/* Route Path */}
+        {routePath && (
+          <Polyline
+            positions={routePath}
+            color="#dc2626"
+            weight={4}
+            opacity={0.8}
+          />
+        )}
 
         {/* Nearby Restaurants - Red markers */}
         {restaurants.map((restaurant, index) => (
@@ -296,10 +373,29 @@ export default function MapPage() {
           )}
         </button>
 
+        {/* Clear Route Button */}
+        {routePath && (
+          <button
+            onClick={clearRoute}
+            className="px-4 py-3 bg-gray-600 hover:bg-gray-700 text-white rounded-lg shadow-lg font-semibold transition-all hover:shadow-xl transform hover:scale-105"
+          >
+            🚫 Clear Route
+          </button>
+        )}
+
         {/* Restaurant Count */}
         {restaurants.length > 0 && (
           <div className="bg-white px-3 py-2 rounded-lg shadow-md text-sm font-medium text-gray-700">
             Found {restaurants.length} restaurant{restaurants.length !== 1 ? 's' : ''}
+          </div>
+        )}
+
+        {/* Route Information */}
+        {routeInfo && (
+          <div className="bg-white px-4 py-3 rounded-lg shadow-md text-sm">
+            <h4 className="font-semibold text-gray-800 mb-1">Route Info</h4>
+            <p className="text-gray-600">Distance: {routeInfo.distance} km</p>
+            <p className="text-gray-600">Duration: ~{routeInfo.duration} min on foot.</p>
           </div>
         )}
       </div>
@@ -316,6 +412,8 @@ export default function MapPage() {
         restaurant={selectedRestaurant}
         isOpen={showModal}
         onClose={closeModal}
+        onShowPaths={getRouteToRestaurant}
+        loadingPath={loadingPath}
       />
     </div>
   );
