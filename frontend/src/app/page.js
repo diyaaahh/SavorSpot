@@ -35,7 +35,7 @@ export default function HomePage() {
                 src="/Red.png"
                 alt="Location Illustration"
                 fill
-                className="object-cover pl-10"
+                className="object-contain pl-10"
               />
 
               {/* Button Overlay */}
@@ -63,13 +63,13 @@ export default function HomePage() {
                 icon={<FaMapMarkerAlt />}
               />
               <Card
-                title="Call for Reservation"
-                description="Easily contact restaurants for bookings."
+                title="Call for delivery"
+                description="Easily contact restaurants for information."
                 icon={<FaPhoneAlt />}
               />
               <Card
-                title="Explore Menus"
-                description="Check menus before visiting and order smarter."
+                title="Get Paths to Restaurants"
+                description="Navigate to your favorite restaurants with ease."
                 icon={<FaUtensils />}
               />
             </div>
